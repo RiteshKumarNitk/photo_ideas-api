@@ -13,12 +13,12 @@ export async function POST(request: NextRequest) {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized - No token provided' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const decoded = verifyToken(token);
     if (!decoded) {
-      return NextResponse.json({ error: 'Unauthorized - Invalid token' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
     if (decoded.role !== 'admin') {
@@ -33,70 +33,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File is required' }, { status: 400 });
     }
 
-    // Check if Cloudinary is configured
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || 'SnapIdeas_uploads';
 
-    // If Cloudinary is not configured, return a placeholder URL
-    if (!cloudName || !apiKey || !apiSecret || cloudName === 'SnapIdeas') {
-      const placeholderUrl = `https://via.placeholder.com/800x600.jpg?text=${encodeURIComponent(file.name)}`;
-      return NextResponse.json({
-        url: placeholderUrl,
-        publicId: `placeholder_${Date.now()}`,
-        filename: file.name,
-        placeholder: true,
-        message: 'Cloudinary not configured. Using placeholder image.'
-      });
-    }
+    // Check if we should use unsigned upload (recommended for web)
+    const useUnsigned = process.env.USE_UNSIGNED_UPLOAD === 'true';
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
-    const folderMap: Record<string, string> = {
-      'avatars': 'photo_ideas/avatars',
-      'photos': 'photo_ideas/photos',
-      'filters': 'photo_ideas/filters',
-      'categories': 'photo_ideas/categories',
-    };
+    let uploadResult;
 
-    const folder = folderMap[bucket || 'photos'] || 'photo_ideas/photos';
-
-    const result = await new Promise<any>((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(
+    if (useUnsigned && uploadPreset) {
+      // Unsigned upload using upload preset (no signature needed)
+      uploadResult = await cloudinary.uploader.upload(
+        `data:image/jpeg;base64,${buffer.toString('base64')}`,
         {
-          folder,
-          resource_type: 'auto',
-          use_filename: true,
-          unique_filename: true,
-          overwrite: false,
-        },
-        (error: any, result: any) => {
-          if (error) reject(error);
-          else if (result) resolve(result);
-          else reject(new Error('Upload failed'));
+          upload_preset: uploadPreset,
+          folder: `photo_ideas/${bucket || 'photos'}`,
+          public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
         }
       );
+    } else {
+      // Signed upload (requires valid credentials)
+      const folderMap: Record<string, string> = {
+        'avatars': 'photo_ideas/avatars',
+        'photos': 'photo_ideas/photos',
+        'filters': 'photo_ideas/filters',
+        'categories': 'photo_ideas/categories',
+      };
 
-      const readable = new Readable();
-      readable.push(buffer);
-      readable.push(null);
-      readable.pipe(uploadStream);
-    });
+      const folder = folderMap[bucket || 'photos'] || 'photo_ideas/photos';
+
+      uploadResult = await new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder,
+            public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+          },
+          (error: any, result: any) => {
+            if (error) reject(error);
+            else if (result) resolve(result);
+            else reject(new Error('Upload failed'));
+          }
+        );
+
+        const readable = new Readable();
+        readable.push(buffer);
+        readable.push(null);
+        readable.pipe(uploadStream);
+      });
+    }
 
     return NextResponse.json({
-      url: result.secure_url,
-      publicId: result.public_id,
+      url: uploadResult.secure_url,
+      publicId: uploadResult.public_id,
       filename: file.name,
     });
   } catch (error: any) {
-    console.error('Error uploading to Cloudinary:', error);
+    console.error('Cloudinary upload error:', error);
     
-    // If Cloudinary fails, return error with details
     return NextResponse.json({ 
-      error: 'Failed to upload file to Cloudinary',
-      details: error.message || 'Unknown error',
-      cloudinaryError: true
+      error: 'Failed to upload file',
+      details: error.message || 'Unknown error'
     }, { status: 500 });
   }
 }
@@ -122,11 +121,6 @@ export async function DELETE(request: NextRequest) {
 
     if (!publicId) {
       return NextResponse.json({ error: 'Public ID is required' }, { status: 400 });
-    }
-
-    // Skip deletion for placeholder images
-    if (publicId.startsWith('placeholder_')) {
-      return NextResponse.json({ message: 'Placeholder image deleted (no Cloudinary deletion needed)' });
     }
 
     const result = await cloudinary.uploader.destroy(publicId);
