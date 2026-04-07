@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  username     String?
+  fullName     String?
+  avatar       String?
+  bio          String?
+  role         String    @default("user")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  likes         Like[]
+  quoteLikes    QuoteLike[]
+  photos        Photo[]        @relation("UserPhotos")
+  resetTokens   PasswordResetToken[]
+
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("password_reset_tokens")
+}
+
+model Category {
+  id            String        @id @default(cuid())
+  name          String        @unique
+  imageUrl      String?
+  subCategories SubCategory[]
+  photos        Photo[]
+
+  @@map("categories")
+}
+
+model SubCategory {
+  id         String   @id @default(cuid())
+  name       String
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  photos     Photo[]
+
+  @@unique([categoryId, name])
+  @@map("sub_categories")
+}
+
+model Photo {
+  id                 String       @id @default(cuid())
+  title              String?
+  description        String?
+  imageUrl           String
+  posingInstructions String?
+  categoryId         String?
+  category           Category?    @relation(fields: [categoryId], references: [id])
+  subCategoryId      String?
+  subCategory        SubCategory? @relation(fields: [subCategoryId], references: [id])
+  userId             String?
+  user               User?        @relation("UserPhotos", fields: [userId], references: [id])
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  likes Like[]
+
+  @@map("photos")
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  photoId   String?
+  photo     Photo?   @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  imageUrl  String
+  createdAt DateTime @default(now())
+
+  @@unique([userId, imageUrl])
+  @@map("likes")
+}
+
+model Quote {
+  id        String      @id @default(cuid())
+  content   String
+  author    String      @default("Unknown")
+  category  String      @default("General")
+  createdAt DateTime    @default(now())
+  updatedAt DateTime     @updatedAt
+
+  likes QuoteLike[]
+
+  @@map("quotes")
+}
+
+model QuoteLike {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, quoteId])
+  @@map("quote_likes")
+}
+
+model FaceFilter {
+  id           String   @id @default(cuid())
+  name         String
+  imageUrl     String?
+  thumbnailUrl String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("face_filters")
+}
