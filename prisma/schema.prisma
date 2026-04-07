@@ -15,6 +15,8 @@ model User {
   fullName     String?
   avatar       String?
   bio          String?
+  phoneNumber  String?
+  gender       String?
   role         String    @default("user")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -41,7 +43,10 @@ model PasswordResetToken {
 model Category {
   id            String        @id @default(cuid())
   name          String        @unique
+  icon          String?
+  color         String?
   imageUrl      String?
+  isActive      Boolean       @default(true)
   subCategories SubCategory[]
   photos        Photo[]
 
@@ -53,6 +58,7 @@ model SubCategory {
   name       String
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  isActive   Boolean  @default(true)
   photos     Photo[]
 
   @@unique([categoryId, name])
@@ -94,11 +100,12 @@ model Like {
 
 model Quote {
   id        String      @id @default(cuid())
-  content   String
+  content   String      @unique
   author    String      @default("Unknown")
   category  String      @default("General")
+  isActive  Boolean     @default(true)
   createdAt DateTime    @default(now())
-  updatedAt DateTime     @updatedAt
+  updatedAt DateTime    @updatedAt
 
   likes QuoteLike[]
 
@@ -119,9 +126,13 @@ model QuoteLike {
 
 model FaceFilter {
   id           String   @id @default(cuid())
-  name         String
+  name         String   @unique
+  description  String?
+  icon         String?
+  category     String?
   imageUrl     String?
   thumbnailUrl String?
+  isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

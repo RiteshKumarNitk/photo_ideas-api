@@ -84,8 +84,10 @@ async function main() {
     });
 
     for (const subName of cat.subcategories) {
-      await prisma.subcategory.upsert({
-        where: { name_categoryId: { name: subName, categoryId: category.id } },
+      await prisma.subCategory.upsert({
+        where: { 
+          categoryId_name: { categoryId: category.id, name: subName }
+        },
         update: {},
         create: {
           name: subName,
@@ -145,7 +147,7 @@ async function main() {
 
   console.log('\nCreating filters...');
   for (const filter of filters) {
-    await prisma.filter.upsert({
+    await prisma.faceFilter.upsert({
       where: { name: filter.name },
       update: { description: filter.description, icon: filter.icon, category: filter.category },
       create: {
