@@ -36,9 +36,14 @@ export async function POST(request: NextRequest) {
 
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
     const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
-    const useUnsigned = uploadPreset && uploadPreset.length > 0;
 
-    console.log('Upload attempt:', { cloudName, uploadPreset, useUnsigned, fileName: file.name });
+    // Clean filename - remove all slashes and special characters
+    const cleanFileName = file.name
+      .replace(/[/\\]/g, '_')  // Remove path separators
+      .replace(/[^a-zA-Z0-9._-]/g, '_')  // Replace special chars
+      .replace(/_+/g, '_');  // Remove duplicate underscores
+
+    console.log('Upload attempt:', { cloudName, uploadPreset, originalName: file.name, cleanName: cleanFileName });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
@@ -47,56 +52,34 @@ export async function POST(request: NextRequest) {
 
     let uploadResult: any;
 
-    if (useUnsigned) {
+    if (uploadPreset && uploadPreset.length > 0) {
       // Unsigned upload using upload preset
       try {
         uploadResult = await cloudinary.uploader.upload(
           `data:${mimeType};base64,${base64Data}`,
           {
             upload_preset: uploadPreset,
-            folder: `photo_ideas/${bucket || 'photos'}`,
+            folder: bucket === 'photos' ? 'SnapIdeas/Images' : `SnapIdeas/${bucket || 'Images'}`,
+            public_id: cleanFileName.replace(/\.[^.]+$/, ''),  // Remove extension for public_id
             resource_type: 'auto',
+            use_filename: false,
+            unique_filename: true,
           }
         );
-        console.log('Unsigned upload success:', uploadResult.secure_url);
+        console.log('Upload success:', uploadResult.secure_url);
       } catch (uploadError: any) {
         console.error('Unsigned upload failed:', uploadError);
         return NextResponse.json({ 
           error: 'Cloudinary upload failed',
           details: uploadError.message,
-          hint: 'Make sure CLOUDINARY_UPLOAD_PRESET is set and the preset is set to Unsigned mode'
+          hint: 'Check if upload preset is set to Unsigned mode'
         }, { status: 500 });
       }
     } else {
-      // Signed upload with credentials
-      const folderMap: Record<string, string> = {
-        'avatars': 'photo_ideas/avatars',
-        'photos': 'photo_ideas/photos',
-        'filters': 'photo_ideas/filters',
-        'categories': 'photo_ideas/categories',
-      };
-
-      const folder = folderMap[bucket || 'photos'] || 'photo_ideas/photos';
-
-      uploadResult = await new Promise<any>((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder,
-            resource_type: 'auto',
-            public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
-          },
-          (error: any, result: any) => {
-            if (error) reject(error);
-            else if (result) resolve(result);
-            else reject(new Error('Upload failed'));
-          }
-        );
-
-        const readable = new Readable();
-        readable.push(buffer);
-        readable.push(null);
-        readable.pipe(uploadStream);
-      });
+      return NextResponse.json({ 
+        error: 'Upload preset not configured',
+        details: 'CLOUDINARY_UPLOAD_PRESET environment variable is not set'
+      }, { status: 500 });
     }
 
     return NextResponse.json({
