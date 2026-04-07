@@ -6,11 +6,26 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const categoryId = searchParams.get('categoryId')
+    const categoryName = searchParams.get('categoryName')
     const subCategoryId = searchParams.get('subCategoryId')
 
     const where: any = {}
-    if (categoryId) where.categoryId = categoryId
-    if (subCategoryId) where.subCategoryId = subCategoryId
+    
+    if (categoryId) {
+      where.categoryId = categoryId
+    } else if (categoryName) {
+      // Filter by category name (case-insensitive)
+      where.category = {
+        name: {
+          equals: categoryName.toLowerCase(),
+          mode: 'insensitive'
+        }
+      }
+    }
+    
+    if (subCategoryId) {
+      where.subCategoryId = subCategoryId
+    }
 
     const photos = await prisma.photo.findMany({
       where,
