@@ -7,6 +7,7 @@ cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
+  secure: true,
 });
 
 export async function POST(request: NextRequest) {
@@ -34,28 +35,40 @@ export async function POST(request: NextRequest) {
     }
 
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || 'SnapIdeas_uploads';
+    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+    const useUnsigned = uploadPreset && uploadPreset.length > 0;
 
-    // Check if we should use unsigned upload (recommended for web)
-    const useUnsigned = process.env.USE_UNSIGNED_UPLOAD === 'true';
+    console.log('Upload attempt:', { cloudName, uploadPreset, useUnsigned, fileName: file.name });
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    const base64Data = buffer.toString('base64');
+    const mimeType = file.type || 'image/jpeg';
 
-    let uploadResult;
+    let uploadResult: any;
 
-    if (useUnsigned && uploadPreset) {
-      // Unsigned upload using upload preset (no signature needed)
-      uploadResult = await cloudinary.uploader.upload(
-        `data:image/jpeg;base64,${buffer.toString('base64')}`,
-        {
-          upload_preset: uploadPreset,
-          folder: `photo_ideas/${bucket || 'photos'}`,
-          public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-        }
-      );
+    if (useUnsigned) {
+      // Unsigned upload using upload preset
+      try {
+        uploadResult = await cloudinary.uploader.upload(
+          `data:${mimeType};base64,${base64Data}`,
+          {
+            upload_preset: uploadPreset,
+            folder: `photo_ideas/${bucket || 'photos'}`,
+            resource_type: 'auto',
+          }
+        );
+        console.log('Unsigned upload success:', uploadResult.secure_url);
+      } catch (uploadError: any) {
+        console.error('Unsigned upload failed:', uploadError);
+        return NextResponse.json({ 
+          error: 'Cloudinary upload failed',
+          details: uploadError.message,
+          hint: 'Make sure CLOUDINARY_UPLOAD_PRESET is set and the preset is set to Unsigned mode'
+        }, { status: 500 });
+      }
     } else {
-      // Signed upload (requires valid credentials)
+      // Signed upload with credentials
       const folderMap: Record<string, string> = {
         'avatars': 'photo_ideas/avatars',
         'photos': 'photo_ideas/photos',
@@ -69,7 +82,8 @@ export async function POST(request: NextRequest) {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
             folder,
-            public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+            resource_type: 'auto',
+            public_id: `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`,
           },
           (error: any, result: any) => {
             if (error) reject(error);
@@ -91,11 +105,10 @@ export async function POST(request: NextRequest) {
       filename: file.name,
     });
   } catch (error: any) {
-    console.error('Cloudinary upload error:', error);
-    
+    console.error('Upload error:', error);
     return NextResponse.json({ 
       error: 'Failed to upload file',
-      details: error.message || 'Unknown error'
+      details: error.message
     }, { status: 500 });
   }
 }
