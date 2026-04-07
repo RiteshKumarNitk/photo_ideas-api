@@ -64,6 +64,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
+    if (decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
+    }
+
     const { imageUrl, categoryId, subCategoryId, title, description, posingInstructions } = await request.json()
 
     if (!imageUrl) {

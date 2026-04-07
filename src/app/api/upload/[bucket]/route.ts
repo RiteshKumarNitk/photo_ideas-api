@@ -13,20 +13,36 @@ export async function POST(request: NextRequest) {
   try {
     const token = request.headers.get('authorization')?.replace('Bearer ', '');
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized - No token provided' }, { status: 401 });
     }
 
     const decoded = verifyToken(token);
     if (!decoded) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+      return NextResponse.json({ error: 'Unauthorized - Invalid token' }, { status: 401 });
+    }
+
+    if (decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     const bucket = formData.get('bucket') as string | null;
 
-    if (!file || !bucket) {
-      return NextResponse.json({ error: 'File and bucket are required' }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: 'File is required' }, { status: 400 });
+    }
+
+    // Check if Cloudinary is configured
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      return NextResponse.json({ 
+        error: 'Cloudinary not configured',
+        details: 'Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables'
+      }, { status: 500 });
     }
 
     const bytes = await file.arrayBuffer();
@@ -39,7 +55,7 @@ export async function POST(request: NextRequest) {
       'categories': 'photo_ideas/categories',
     };
 
-    const folder = folderMap[bucket] || `photo_ideas/${bucket}`;
+    const folder = folderMap[bucket || 'photos'] || 'photo_ideas/photos';
 
     const result = await new Promise<any>((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
@@ -68,9 +84,12 @@ export async function POST(request: NextRequest) {
       publicId: result.public_id,
       filename: file.name,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error uploading to Cloudinary:', error);
-    return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Failed to upload file',
+      details: error.message 
+    }, { status: 500 });
   }
 }
 
@@ -84,6 +103,10 @@ export async function DELETE(request: NextRequest) {
     const decoded = verifyToken(token);
     if (!decoded) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    if (decoded.role !== 'admin') {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);
