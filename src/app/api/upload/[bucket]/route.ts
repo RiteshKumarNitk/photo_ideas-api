@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken } from '@/lib/auth';
 import { v2 as cloudinary } from 'cloudinary';
-import { Readable } from 'stream';
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -35,52 +34,56 @@ export async function POST(request: NextRequest) {
     }
 
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
-    // Clean filename - remove all slashes and special characters
-    const cleanFileName = file.name
-      .replace(/[/\\]/g, '_')  // Remove path separators
-      .replace(/[^a-zA-Z0-9._-]/g, '_')  // Replace special chars
-      .replace(/_+/g, '_');  // Remove duplicate underscores
-
-    console.log('Upload attempt:', { cloudName, uploadPreset, originalName: file.name, cleanName: cleanFileName });
+    if (!cloudName || !apiKey || !apiSecret) {
+      return NextResponse.json({ 
+        error: 'Cloudinary not configured',
+        details: 'Missing Cloudinary environment variables'
+      }, { status: 500 });
+    }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
     const base64Data = buffer.toString('base64');
     const mimeType = file.type || 'image/jpeg';
 
-    let uploadResult: any;
+    // Generate clean public ID without slashes
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const publicId = `photo_${timestamp}_${randomSuffix}`;
 
-    if (uploadPreset && uploadPreset.length > 0) {
-      // Unsigned upload using upload preset
-      try {
-        uploadResult = await cloudinary.uploader.upload(
-          `data:${mimeType};base64,${base64Data}`,
-          {
-            upload_preset: uploadPreset,
-            folder: bucket === 'photos' ? 'SnapIdeas/Images' : `SnapIdeas/${bucket || 'Images'}`,
-            public_id: cleanFileName.replace(/\.[^.]+$/, ''),  // Remove extension for public_id
-            resource_type: 'auto',
-            use_filename: false,
-            unique_filename: true,
-          }
-        );
-        console.log('Upload success:', uploadResult.secure_url);
-      } catch (uploadError: any) {
-        console.error('Unsigned upload failed:', uploadError);
-        return NextResponse.json({ 
-          error: 'Cloudinary upload failed',
-          details: uploadError.message,
-          hint: 'Check if upload preset is set to Unsigned mode'
-        }, { status: 500 });
+    console.log('Cloudinary upload attempt:', {
+      cloudName,
+      hasApiKey: !!apiKey,
+      hasApiSecret: !!apiSecret,
+      fileName: file.name,
+      publicId,
+      mimeType
+    });
+
+    // Use signed upload with explicit public_id and display_name
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:${mimeType};base64,${base64Data}`,
+      {
+        public_id: publicId,
+        folder: bucket === 'photos' ? 'SnapIdeas/Images' : `SnapIdeas/${bucket || 'Images'}`,
+        resource_type: 'auto',
+        // Explicitly set display name to avoid slashes issue
+        display_name: `photo_${timestamp}`,
+        // Don't use filename as display name
+        use_filename: false,
+        unique_filename: false,
+        overwrite: false,
+        // Sign the upload
+        timestamp: timestamp,
+        api_key: apiKey,
+        api_secret: apiSecret,
       }
-    } else {
-      return NextResponse.json({ 
-        error: 'Upload preset not configured',
-        details: 'CLOUDINARY_UPLOAD_PRESET environment variable is not set'
-      }, { status: 500 });
-    }
+    );
+
+    console.log('Upload success:', uploadResult.secure_url);
 
     return NextResponse.json({
       url: uploadResult.secure_url,
@@ -88,10 +91,11 @@ export async function POST(request: NextRequest) {
       filename: file.name,
     });
   } catch (error: any) {
-    console.error('Upload error:', error);
+    console.error('Cloudinary upload error:', error);
+    
     return NextResponse.json({ 
-      error: 'Failed to upload file',
-      details: error.message
+      error: 'Cloudinary upload failed',
+      details: error.message || 'Unknown error'
     }, { status: 500 });
   }
 }
