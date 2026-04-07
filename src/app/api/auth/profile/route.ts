@@ -2,35 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { getTokenFromRequest, verifyToken } from '@/lib/auth'
 import bcrypt from 'bcryptjs'
+import { handleCors, corsResponse } from '@/lib/cors'
 
 export async function PUT(request: NextRequest) {
+  const corsPreflight = handleCors(request)
+  if (corsPreflight) return corsPreflight
+
   try {
     const token = getTokenFromRequest(request)
     if (!token) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return corsResponse(NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
     }
 
     const decoded = verifyToken(token)
     if (!decoded) {
-      return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
+      return corsResponse(NextResponse.json({ error: 'Invalid token' }, { status: 401 }))
     }
 
     const body = await request.json()
     const { username, fullName, avatar, bio, phoneNumber, gender, currentPassword, newPassword } = body
 
-    // If changing password
     if (currentPassword && newPassword) {
       const user = await prisma.user.findUnique({
         where: { id: decoded.userId }
       })
 
       if (!user) {
-        return NextResponse.json({ error: 'User not found' }, { status: 404 })
+        return corsResponse(NextResponse.json({ error: 'User not found' }, { status: 404 }))
       }
 
       const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash)
       if (!isValidPassword) {
-        return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 })
+        return corsResponse(NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 }))
       }
 
       const hashedPassword = await bcrypt.hash(newPassword, 12)
@@ -41,7 +44,6 @@ export async function PUT(request: NextRequest) {
       })
     }
 
-    // Update profile
     const updateData: any = {}
     if (username !== undefined) updateData.username = username
     if (fullName !== undefined) updateData.fullName = fullName
@@ -67,12 +69,12 @@ export async function PUT(request: NextRequest) {
       },
     })
 
-    return NextResponse.json(user)
+    return corsResponse(NextResponse.json(user))
   } catch (error) {
     console.error('Error updating profile:', error)
-    return NextResponse.json(
+    return corsResponse(NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
-    )
+    ))
   }
 }
