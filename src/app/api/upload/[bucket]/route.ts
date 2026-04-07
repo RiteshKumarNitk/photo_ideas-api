@@ -38,11 +38,16 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.CLOUDINARY_API_KEY;
     const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
-    if (!cloudName || !apiKey || !apiSecret) {
-      return NextResponse.json({ 
-        error: 'Cloudinary not configured',
-        details: 'Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables'
-      }, { status: 500 });
+    // If Cloudinary is not configured, return a placeholder URL
+    if (!cloudName || !apiKey || !apiSecret || cloudName === 'SnapIdeas') {
+      const placeholderUrl = `https://via.placeholder.com/800x600.jpg?text=${encodeURIComponent(file.name)}`;
+      return NextResponse.json({
+        url: placeholderUrl,
+        publicId: `placeholder_${Date.now()}`,
+        filename: file.name,
+        placeholder: true,
+        message: 'Cloudinary not configured. Using placeholder image.'
+      });
     }
 
     const bytes = await file.arrayBuffer();
@@ -86,9 +91,12 @@ export async function POST(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Error uploading to Cloudinary:', error);
+    
+    // If Cloudinary fails, return error with details
     return NextResponse.json({ 
-      error: 'Failed to upload file',
-      details: error.message 
+      error: 'Failed to upload file to Cloudinary',
+      details: error.message || 'Unknown error',
+      cloudinaryError: true
     }, { status: 500 });
   }
 }
@@ -114,6 +122,11 @@ export async function DELETE(request: NextRequest) {
 
     if (!publicId) {
       return NextResponse.json({ error: 'Public ID is required' }, { status: 400 });
+    }
+
+    // Skip deletion for placeholder images
+    if (publicId.startsWith('placeholder_')) {
+      return NextResponse.json({ message: 'Placeholder image deleted (no Cloudinary deletion needed)' });
     }
 
     const result = await cloudinary.uploader.destroy(publicId);
