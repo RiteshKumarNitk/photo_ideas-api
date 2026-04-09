@@ -21,10 +21,15 @@ model User {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  referralCode String?   @unique
+  referredBy   String?
+  points       Int       @default(0)
+
   likes         Like[]
   quoteLikes    QuoteLike[]
   photos        Photo[]        @relation("UserPhotos")
   resetTokens   PasswordResetToken[]
+  referralRewards ReferralReward[]
 
   @@map("users")
 }
@@ -137,4 +142,15 @@ model FaceFilter {
   updatedAt    DateTime @updatedAt
 
   @@map("face_filters")
+}
+
+model ReferralReward {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rewardType  String   // e.g., "POZE_PACK_UNLOCK", "FILTER_UNLOCK"
+  rewardValue String
+  createdAt   DateTime @default(now())
+
+  @@map("referral_rewards")
 }

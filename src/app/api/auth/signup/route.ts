@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
   if (corsPreflight) return corsPreflight
 
   try {
-    const { email, password, name } = await request.json()
+    const { email, password, name, referringCode } = await request.json()
 
     if (!email || !password) {
       return corsResponse(NextResponse.json(
@@ -30,14 +30,27 @@ export async function POST(request: NextRequest) {
     }
 
     const hashedPassword = await bcrypt.hash(password, 12)
+    const referralCode = (name || 'user').toLowerCase().replace(/\s/g, '') + Math.random().toString(36).substring(2, 6)
 
     const user = await prisma.user.create({
       data: {
         email,
         passwordHash: hashedPassword,
-        username: name || 'User'
+        username: name || 'User',
+        referralCode,
+        referredBy: referringCode || null
       }
     })
+
+    // If referred, we could add points or rewards here
+    if (referringCode) {
+      await prisma.user.updateMany({
+        where: { referralCode: referringCode },
+        data: {
+          points: { increment: 10 }
+        }
+      })
+    }
 
     const token = generateToken({
       userId: user.id,
@@ -52,7 +65,9 @@ export async function POST(request: NextRequest) {
       fullName: user.fullName,
       avatar: user.avatar,
       bio: user.bio,
-      role: user.role
+      role: user.role,
+      referralCode: user.referralCode,
+      points: user.points
     }
 
     return corsResponse(NextResponse.json({

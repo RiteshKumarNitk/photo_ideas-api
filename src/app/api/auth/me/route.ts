@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
         id: true,
@@ -24,12 +24,23 @@ export async function GET(request: NextRequest) {
         avatar: true,
         bio: true,
         role: true,
+        referralCode: true,
+        points: true,
         createdAt: true,
       },
     });
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    if (!user.referralCode) {
+      const generatedCode = (user.username || 'user').toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 8) + Math.random().toString(36).substring(2, 6);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { referralCode: generatedCode }
+      });
+      user.referralCode = generatedCode;
     }
 
     return NextResponse.json(user);

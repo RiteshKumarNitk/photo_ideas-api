@@ -50,7 +50,9 @@ export async function POST(request: NextRequest) {
       fullName: user.fullName,
       avatar: user.avatar,
       bio: user.bio,
-      role: user.role
+      role: user.role,
+      referralCode: user.referralCode,
+      points: user.points
     }
 
     return corsResponse(NextResponse.json({
